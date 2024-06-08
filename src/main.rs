@@ -119,7 +119,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .map(|x| sheet.get_formatted_value((*x, row)))
                 .collect::<Vec<String>>()
         })
-        .filter(|x| x.iter().all(|y| y.is_empty()));
+        .filter(|x| !x.iter().all(|y| y.is_empty()));
     let show_headers = args.header.then_some(args.headers);
     // Output data based on headers
     if let Some(output) = args.file {
