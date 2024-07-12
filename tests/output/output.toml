@@ -1,0 +1,2 @@
+bin.name="xlsx_extractor"
+args="-f output.xlsx -d , -o output.csv test1 test2"

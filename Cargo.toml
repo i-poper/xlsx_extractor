@@ -11,7 +11,8 @@ description = "Tool to extract data from xlsx(xlsm) by specifying headers."
 clap = "4.5.4"
 clap_derive = "4.5.4"
 csv = "1.3.0"
-umya-spreadsheet = "1.2.6"
+trycmd = "0.15.4"
+umya-spreadsheet = "2.0.0"
 unescape = "0.1.0"
 
 [profile.release]
