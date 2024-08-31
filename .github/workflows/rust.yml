@@ -2,7 +2,7 @@ name: Rust
 
 on:
   push:
-    tags: 
+    tags:
       - 'v*'
 
 env:
@@ -13,13 +13,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-unknown-linux-musl
+        override: true
+        profile: minimal
     - name: Build
       run: cargo build --verbose --target x86_64-unknown-linux-musl --release
     - name: Run tests
       run: cargo test --verbose --target x86_64-unknown-linux-musl --release
     - name: Copy artifacts
-      run: mkdir -p xlsx_extractor && cp - LICENSE target/x86_64-unknown-linux-musl/release/xlsx_extractor xlsx_extractor/
-    - uses: actions/upload-artifact@v1
+      run: mkdir -p xlsx_extractor && cp -a LICENSE target/x86_64-unknown-linux-musl/release/xlsx_extractor xlsx_extractor/
+    - uses: actions/upload-artifact@v4
       with:
         name: xlsx_extractor-${{ github.ref_name }}-linux
         path: xlsx_extractor
@@ -29,12 +36,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --release
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --verbose --release
     - name: Copy artifacts
-      run: mkdir -p xlsx_extractor && cp - LICENSE target/release/xlsx_extractor.exe xlsx_extractor/
-    - uses: actions/upload-artifact@v1
+      shell: bash
+      run: mkdir -p xlsx_extractor && cp -a LICENSE target/release/xlsx_extractor.exe xlsx_extractor/
+    - uses: actions/upload-artifact@v4
       with:
         name: xlsx_extractor-${{ github.ref_name }}-windows
         path: xlsx_extractor
