@@ -1,0 +1,40 @@
+name: Rust
+
+on:
+  push:
+    tags: 
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --verbose --target x86_64-unknown-linux-musl --release
+    - name: Run tests
+      run: cargo test --verbose --target x86_64-unknown-linux-musl --release
+    - name: Copy artifacts
+      run: mkdir -p xlsx_extractor && cp - LICENSE target/x86_64-unknown-linux-musl/release/xlsx_extractor xlsx_extractor/
+    - uses: actions/upload-artifact@v1
+      with:
+        name: xlsx_extractor-${{ github.ref_name }}-linux
+        path: xlsx_extractor
+
+  windows-build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
+    - name: Copy artifacts
+      run: mkdir -p xlsx_extractor && cp - LICENSE target/release/xlsx_extractor.exe xlsx_extractor/
+    - uses: actions/upload-artifact@v1
+      with:
+        name: xlsx_extractor-${{ github.ref_name }}-windows
+        path: xlsx_extractor
