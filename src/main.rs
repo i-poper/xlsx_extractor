@@ -84,20 +84,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     let path = std::path::Path::new(&args.xlsx);
-    let mut book = reader::xlsx::lazy_read(path).unwrap();
+    let mut book = reader::xlsx::lazy_read(path)
+        .unwrap_or_else(|e| invalid_value(&format!("Can't read `{}`: {e}", path.display())));
 
     // Check sheet name
     let sheet = if let Some(ref sheet_name) = args.sheet {
         let index = book
-            .get_sheet_collection_no_check()
+            .sheet_collection_no_check()
             .iter()
-            .position(|x| x.get_name() == sheet_name)
+            .position(|x| x.name() == sheet_name)
             .unwrap_or_else(|| invalid_value(&format!("Sheet not found:{}", sheet_name)));
-        book.read_sheet(index).get_sheet(&index).unwrap()
+        book.read_sheet(index).sheet(index).unwrap()
     } else {
         book.read_sheet(0_usize)
-            .get_sheet(&(0_usize))
-            .unwrap_or_else(|| invalid_value("There is no sheet."))
+            .sheet(0_usize)
+            .unwrap_or_else(|_| invalid_value("There is no sheet."))
     };
 
     let mut binding = WriterBuilder::new();
@@ -111,12 +112,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         invalid_value("`[HEADERS]...` not found.");
     });
 
-    let mut data_iter = (header.row + 1..=sheet.get_highest_row())
+    let mut data_iter = (header.row + 1..=sheet.highest_row())
         .map(|row| {
             header
                 .header_column
                 .iter()
-                .map(|x| sheet.get_formatted_value((*x, row)))
+                .map(|x| sheet.formatted_value((*x, row)))
                 .collect::<Vec<String>>()
         })
         .filter(|x| !x.iter().all(|y| y.is_empty()));
@@ -152,7 +153,7 @@ fn output_table_data<W: io::Write>(
 //--------------------------------------------------------------------------------
 /// Find the rows in the sheet that contain all the characters specified as headers.
 fn find_header(sheet: &Worksheet, headers: &[String]) -> Option<HeaderInfo> {
-    for row in 1..=sheet.get_highest_row() {
+    for row in 1..=sheet.highest_row() {
         if let Some(header_column) = find_header_in_row(row, sheet, headers) {
             return Some(HeaderInfo { row, header_column });
         }
@@ -166,8 +167,8 @@ fn find_header_in_row(row: u32, sheet: &Worksheet, headers: &[String]) -> Option
     let mut indexes: Vec<(&String, Option<u32>)> =
         headers.iter().map(|x| (x, None as Option<u32>)).collect();
 
-    for col in 1..=sheet.get_highest_column() {
-        let text = sheet.get_formatted_value((col, row));
+    for col in 1..=sheet.highest_column() {
+        let text = sheet.formatted_value((col, row));
         if text.is_empty() || !headers.iter().any(|x| x == &text) {
             continue;
         }

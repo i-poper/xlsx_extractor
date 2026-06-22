@@ -22,7 +22,7 @@ Find the rows in the sheet where all the specified headers exist, and output the
 ```console
 $ xlsx_extractor --file tests/test.xlsx -s test_sheet -d , test2 test1 test3
 test2,test1,test3
-cd,ab,3
+cd,ab,3.0
 b,a,c
 
 ```
@@ -64,7 +64,7 @@ The next line after the header line is the data line. In the figure, columns B, 
 As a result,
 ```dumb
 test2,test1,test3
-cd,ab,3
+cd,ab,3.0
 b,a,c
 
 ```
@@ -73,7 +73,7 @@ is output.
 If you do not want to output headers, do the following.
 ```console
 $ xlsx_extractor --file tests/test.xlsx -s test_sheet -d , -H test2 test1 test3
-cd,ab,3
+cd,ab,3.0
 b,a,c
 
 ```
@@ -83,7 +83,7 @@ To output to a file, use the following.
 $ xlsx_extractor --file tests/test.xlsx -s test_sheet -d , -o test.csv test2 test1 test3
 $ cat test.csv
 test2,test1,test3
-cd,ab,3
+cd,ab,3.0
 b,a,c
 
 ```
@@ -96,7 +96,7 @@ You can use escape sequences for headers.If you wish to designate cell E7 as a h
 $ xlsx_extractor --file tests/test.xlsx -s test_sheet -d , test2 test1 test3 Test\\r\\n4
 test2,test1,test3,"Test
 4"
-cd,ab,3,4
+cd,ab,3.0,4.0
 b,a,c,c
 
 ```
@@ -108,7 +108,7 @@ You can use escape sequences also in delimiters and quotes.
 $ xlsx_extractor -f tests/test.xlsx -s test_sheet -d \\t -q \' test2 test1 test3 Test\\r\\n4
 test2   test1   test3   'Test
 4'
-cd      ab      3       4
+cd      ab      3.0       4.0
 b       a       c       c
 
 ```
@@ -120,7 +120,7 @@ You can specify a quoting style.
 $ xlsx_extractor -f tests/test.xlsx -s test_sheet -d , -t always test2 test1 test3 Test\\r\\n4
 "test2","test1","test3","Test
 4"
-"cd","ab","3","4"
+"cd","ab","3.0","4.0"
 "b","a","c","c"
 
 ```
@@ -130,7 +130,7 @@ $ xlsx_extractor -f tests/test.xlsx -s test_sheet -d , -t always test2 test1 tes
 $ xlsx_extractor -f tests/test.xlsx -s test_sheet -d , -t necessary test2 test1 test3 Test\\r\\n4
 test2,test1,test3,"Test
 4"
-cd,ab,3,4
+cd,ab,3.0,4.0
 b,a,c,c
 
 ```
@@ -140,7 +140,7 @@ b,a,c,c
 $ xlsx_extractor -f tests/test.xlsx -s test_sheet -d , -t non-numeric test2 test1 test3 Test\\r\\n4
 "test2","test1","test3","Test
 4"
-"cd","ab",3,4
+"cd","ab",3.0,4.0
 "b","a","c","c"
 
 ```
@@ -150,7 +150,7 @@ $ xlsx_extractor -f tests/test.xlsx -s test_sheet -d , -t non-numeric test2 test
 $ xlsx_extractor -f tests/test.xlsx -s test_sheet -d , -t never test2 test1 test3 Test\\r\\n4
 test2,test1,test3,Test
 4
-cd,ab,3,4
+cd,ab,3.0,4.0
 b,a,c,c
 
 ```
