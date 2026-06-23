@@ -13,6 +13,7 @@ clap_derive = "4.6.1"
 csv = "1.4.0"
 umya-spreadsheet = "3.0.0"
 unescape = "0.1.0"
+ssfmt = "0.1.2"
 
 [dev-dependencies]
 trycmd = "1.2.0"
