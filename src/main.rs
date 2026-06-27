@@ -1,4 +1,4 @@
-use clap::{error::ErrorKind, ArgAction, CommandFactory, Parser};
+use clap::{ArgAction, CommandFactory, Parser, error::ErrorKind};
 use clap_derive::{Parser, ValueEnum};
 use csv::{QuoteStyle, Writer, WriterBuilder};
 use std::collections::HashMap;
@@ -7,63 +7,7 @@ use umya_spreadsheet::helper::coordinate::CellCoordinates;
 use umya_spreadsheet::*;
 use unescape::unescape;
 
-#[derive(Debug, Default, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Config {
-    #[serde(default)]
-    builtin_formats: FormatConfig,
-}
-
-#[derive(Debug, Default, Clone, serde::Deserialize)]
-#[serde(transparent)]
-struct FormatConfig {
-    formats: HashMap<String, String>,
-}
-
-const BUILTIN_FORMATS: &[(u32, &str)] = &[
-    (14, "short_date"),
-    (15, "date_abbr_month"),
-    (16, "day_abbr_month"),
-    (17, "abbr_month_year"),
-    (18, "time_ampm"),
-    (19, "time_seconds_ampm"),
-    (20, "short_time"),
-    (21, "long_time"),
-    (22, "short_date_time"),
-];
-
-impl FormatConfig {
-    fn get(&self, num_fmt_id: u32) -> Option<&str> {
-        let name = BUILTIN_FORMATS
-            .iter()
-            .find_map(|(id, name)| (*id == num_fmt_id).then_some(*name))?;
-        self.formats.get(name).map(String::as_str)
-    }
-
-    fn set(&mut self, name: &str, format: String) -> Result<(), String> {
-        if !is_builtin_format_name(name) {
-            return Err(format!("unknown built-in format name `{name}`"));
-        }
-        self.formats.insert(name.to_string(), format);
-        Ok(())
-    }
-
-    fn validate(&self) -> Result<(), String> {
-        for name in self.formats.keys() {
-            if !is_builtin_format_name(name) {
-                return Err(format!("unknown built-in format name `{name}`"));
-            }
-        }
-        Ok(())
-    }
-}
-
-fn is_builtin_format_name(name: &str) -> bool {
-    BUILTIN_FORMATS
-        .iter()
-        .any(|(_id, format_name)| *format_name == name)
-}
-
+// [ Args ]///////////////////////////////////////////////////////////////////////
 #[derive(Parser, Debug)]
 #[command(version, about="Tool to extract data from xlsx(xlsm) by specifying headers.", long_about = None)]
 struct Args {
@@ -94,9 +38,9 @@ struct Args {
     /// Config file
     #[arg(short = 'c', long = "config")]
     config_file: Option<String>,
-    /// Set the date and time formats
-    /// Key words:
-    /// short_date, short_date_time, short_time, long_time
+    /// Override Excel built-in date/time formats
+    ///
+    /// Use NAME=FORMAT. See README for supported format names.
     ///
     /// Example:
     /// -X 'short_date_time=yyyy/m/d h:mm'
@@ -107,7 +51,8 @@ struct Args {
     format_overrides: Vec<(String, String)>,
 }
 
-///
+//--------------------------------------------------------------------------------
+/// Parses a `-X/--format` value in `NAME=FORMAT` form.
 fn parse_format_override(s: &str) -> Result<(String, String), String> {
     let (name, format) = s
         .split_once('=')
@@ -124,6 +69,24 @@ fn parse_format_override(s: &str) -> Result<(String, String), String> {
     Ok((name.to_string(), format.to_string()))
 }
 
+//--------------------------------------------------------------------------------
+/// Parses an escaped single-byte character.
+fn escaped_u8(s: &str) -> Result<u8, String> {
+    let d = unescape(s).ok_or(format!("`{s}` is not a valid escape string."))?;
+    let d = d.as_bytes();
+    if d.len() != 1 {
+        return Err("Specified by ASCII characters.".to_string());
+    }
+    Ok(d[0])
+}
+
+//--------------------------------------------------------------------------------
+/// Parses escaped text.
+fn escaped_string(s: &str) -> Result<String, String> {
+    unescape(s).ok_or(format!("`{s}` is not a valid escape string."))
+}
+
+//--------------------------------------------------------------------------------
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum Style {
     Always,
@@ -132,6 +95,7 @@ enum Style {
     Never,
 }
 
+//--------------------------------------------------------------------------------
 impl From<Style> for QuoteStyle {
     fn from(value: Style) -> Self {
         match value {
@@ -143,6 +107,117 @@ impl From<Style> for QuoteStyle {
     }
 }
 
+// [ Config ]/////////////////////////////////////////////////////////////////////
+
+//--------------------------------------------------------------------------------
+/// Configuration loaded from a TOML file.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Config {
+    #[serde(default)]
+    builtin_formats: FormatConfig,
+}
+
+//--------------------------------------------------------------------------------
+/// User-defined overrides for Excel built-in number formats.
+#[derive(Debug, Default, Clone, serde::Deserialize)]
+#[serde(transparent)]
+struct FormatConfig {
+    formats: HashMap<String, String>,
+}
+
+//--------------------------------------------------------------------------------
+/// Excel built-in date/time format IDs supported by format overrides.
+///
+/// Each entry maps a `numFmtId` to the corresponding config/CLI format name.
+const BUILTIN_FORMATS: &[(u32, &str)] = &[
+    (14, "short_date"),
+    (15, "date_abbr_month"),
+    (16, "day_abbr_month"),
+    (17, "abbr_month_year"),
+    (18, "time_ampm"),
+    (19, "time_seconds_ampm"),
+    (20, "short_time"),
+    (21, "long_time"),
+    (22, "short_date_time"),
+];
+
+//================================================================================
+impl FormatConfig {
+    /// Returns the override format for an Excel built-in `numFmtId`.
+    fn get(&self, num_fmt_id: u32) -> Option<&str> {
+        let name = BUILTIN_FORMATS
+            .iter()
+            .find_map(|(id, name)| (*id == num_fmt_id).then_some(*name))?;
+        self.formats.get(name).map(String::as_str)
+    }
+
+    //--------------------------------------------------------------------------------
+    /// Sets an override format by config/CLI format name.
+    fn set(&mut self, name: &str, format: String) -> Result<(), String> {
+        if !is_builtin_format_name(name) {
+            return Err(format!("unknown built-in format name `{name}`"));
+        }
+        self.formats.insert(name.to_string(), format);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------------
+    /// Validates that all configured format names are supported.
+    fn validate(&self) -> Result<(), String> {
+        for name in self.formats.keys() {
+            if !is_builtin_format_name(name) {
+                return Err(format!("unknown built-in format name `{name}`"));
+            }
+        }
+        Ok(())
+    }
+}
+
+//--------------------------------------------------------------------------------
+/// Returns whether `name` is a supported built-in format override name.
+fn is_builtin_format_name(name: &str) -> bool {
+    BUILTIN_FORMATS
+        .iter()
+        .any(|(_id, format_name)| *format_name == name)
+}
+
+//--------------------------------------------------------------------------------
+/// Loads configuration from a TOML file.
+///
+/// Returns the default configuration when `path` is `None`.
+fn load_config_file(path: Option<&str>) -> Config {
+    let config = if let Some(file) = path {
+        toml::from_str::<Config>(
+            &std::fs::read_to_string(&file)
+                .unwrap_or_else(|e| invalid_value(&format!("Can't read file `{file}`: {e}"))),
+        )
+        .unwrap_or_else(|e| invalid_value(&format!("Invalid config: {e}")))
+    } else {
+        Config::default()
+    };
+    if let Err(e) = config.builtin_formats.validate() {
+        invalid_value(&format!("Invalid config: {e}"));
+    }
+    config
+}
+
+//--------------------------------------------------------------------------------
+/// Applies command-line format overrides to the configuration.
+///
+/// Overrides take precedence over values loaded from the config file.
+fn apply_format_overrides(config: &mut Config, overrides: &[(String, String)]) {
+    for (k, v) in overrides {
+        config
+            .builtin_formats
+            .set(k, v.clone())
+            .unwrap_or_else(|e| invalid_value(&e))
+    }
+}
+
+// [ Extraction ]/////////////////////////////////////////////////////////////////
+
+//--------------------------------------------------------------------------------
 /// header information
 struct HeaderInfo {
     /// Header row
@@ -254,58 +329,36 @@ impl<'a> WorksheetExtractor<'a> {
     }
 }
 
-//--------------------------------------------------------------------------------
-/// Parsing of escape sequence char
-fn escaped_u8(s: &str) -> Result<u8, String> {
-    let d = unescape(s).ok_or(format!("`{s}` is not a valid escape string."))?;
-    let d = d.as_bytes();
-    if d.len() != 1 {
-        return Err("Specified by ASCII characters.".to_string());
-    }
-    Ok(d[0])
-}
+// [ Output ]/////////////////////////////////////////////////////////////////////
 
 //--------------------------------------------------------------------------------
-/// Parsing of escape sequence strings
-fn escaped_string(s: &str) -> Result<String, String> {
-    unescape(s).ok_or(format!("`{s}` is not a valid escape string."))
+/// Output the data of the columns recognized as headers.
+fn output_table_data<W: io::Write>(
+    show_header: Option<Vec<String>>,
+    data_iter: &mut impl Iterator<Item = Vec<String>>,
+    writer: &mut Writer<W>,
+) -> Result<(), Box<dyn Error>> {
+    // Output headers
+    if let Some(header) = show_header {
+        writer.write_record(header)?;
+    }
+    // Output Data
+    data_iter.try_for_each(|x| writer.write_record(x))?;
+    Ok(writer.flush()?)
 }
 
-//--------------------------------------------------------------------------------
-/// Loads configuration from a TOML file.
-///
-/// Returns the default configuration when `path` is `None`.
-fn load_config_file(path: Option<&str>) -> Config {
-    let config = if let Some(file) = path {
-        toml::from_str::<Config>(
-            &std::fs::read_to_string(&file)
-                .unwrap_or_else(|e| invalid_value(&format!("Can't read file `{file}`: {e}"))),
-        )
-        .unwrap_or_else(|e| invalid_value(&format!("Invalid config: {e}")))
-    } else {
-        Config::default()
-    };
-    if let Err(e) = config.builtin_formats.validate() {
-        invalid_value(&format!("Invalid config: {e}"));
-    }
-    config
-}
+// [ Error ]//////////////////////////////////////////////////////////////////////
 
 //--------------------------------------------------------------------------------
-/// Applies command-line format overrides to the configuration.
-///
-/// Overrides take precedence over values loaded from the config file.
-fn apply_format_overrides(config: &mut Config, overrides: &[(String, String)]) {
-    for (k, v) in overrides {
-        config
-            .builtin_formats
-            .set(k, v.clone())
-            .unwrap_or_else(|e| invalid_value(&e))
-    }
+/// Termination process when an illegal value is detected
+fn invalid_value(msg: &str) -> ! {
+    let mut cmd = Args::command();
+    cmd.error(ErrorKind::InvalidValue, msg).exit();
 }
+
+// [ main ]///////////////////////////////////////////////////////////////////////
 
 //================================================================================
-/// main
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
@@ -316,7 +369,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut config = load_config_file(args.config_file.as_deref());
     apply_format_overrides(&mut config, &args.format_overrides);
 
-    // Check sheet name
+    // Select the target sheet.
     let sheet = if let Some(ref sheet_name) = args.sheet {
         let index = book
             .sheet_collection_no_check()
@@ -339,7 +392,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let extractor = WorksheetExtractor::new(&sheet, config.builtin_formats);
     let mut data_iter = extractor.get_iterator(&args.headers);
     let show_headers = args.header.then_some(args.headers);
-    // Output data based on headers
+
+    // Write the selected columns to the configured output.
     if let Some(output) = args.file {
         let mut writer = builder
             .from_path(&output)
@@ -349,27 +403,4 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut writer = builder.from_writer(io::stdout());
         output_table_data(show_headers, &mut data_iter, &mut writer)
     }
-}
-
-//--------------------------------------------------------------------------------
-/// Output the data of the columns recognized as headers.
-fn output_table_data<W: io::Write>(
-    show_header: Option<Vec<String>>,
-    data_iter: &mut impl Iterator<Item = Vec<String>>,
-    writer: &mut Writer<W>,
-) -> Result<(), Box<dyn Error>> {
-    // Output headers
-    if let Some(header) = show_header {
-        writer.write_record(header)?;
-    }
-    // Output Datas
-    data_iter.try_for_each(|x| writer.write_record(x))?;
-    Ok(writer.flush()?)
-}
-
-//--------------------------------------------------------------------------------
-/// Termination process when an illegal value is detected
-fn invalid_value(msg: &str) -> ! {
-    let mut cmd = Args::command();
-    cmd.error(ErrorKind::InvalidValue, msg).exit();
 }

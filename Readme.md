@@ -35,19 +35,54 @@ Tool to extract data from xlsx(xlsm) by specifying headers.
 Usage: xlsx_extractor [OPTIONS] --file <XLSX> [HEADERS]...
 
 Arguments:
-  [HEADERS]...  Header names
+  [HEADERS]...
+          Header names
 
 Options:
-  -f, --file <XLSX>            Excel file(.xlsx or .xlsm)
-  -d, --delimiter <DELIMITER>  Output delimiter [default: "\t"]
-  -s, --sheet <SHEET>          Sheet name
-  -H, --header                 Suppress header output
-  -q, --quote <QUOTE>          Quote [default: "]
-  -t, --style <STYLE>          Quote Style [default: necessary] [possible values: always, necessary, non-numeric, never]
-  -o, --output <FILE>          Place the output into <FILE>
-  -h, --help                   Print help
-  -V, --version                Print version
+  -f, --file <XLSX>
+          Excel file(.xlsx or .xlsm)
 
+  -d, --delimiter <DELIMITER>
+          Output delimiter
+
+          [default: "\t"]
+
+  -s, --sheet <SHEET>
+          Sheet name
+
+  -H, --header
+          Suppress header output
+
+  -q, --quote <QUOTE>
+          Quote
+
+          [default: "]
+
+  -t, --style <STYLE>
+          Quote Style
+
+          [default: necessary]
+          [possible values: always, necessary, non-numeric, never]
+
+  -o, --output <FILE>
+          Place the output into <FILE>
+
+  -c, --config <CONFIG_FILE>
+          Config file
+
+  -X, --format <NAME=FORMAT>
+          Override Excel built-in date/time formats
+
+          Use NAME=FORMAT. See README for supported format names.
+
+          Example:
+          -X 'short_date_time=yyyy/m/d h:mm'
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 ```
 
 The tool searches for cells with the header names specified by HEADERS, starting from the upper left corner of the sheet. The rows in which all headers are found are recognized as headers.
@@ -154,3 +189,55 @@ cd,ab,3.0,4.0
 b,a,c,c
 
 ```
+
+### Excel built-in date/time formats
+
+Excel built-in date/time formats are locale-dependent. For example, the same short date format may be displayed as `6/21/2026` in one environment and `2026/6/21` in another.
+
+You can override those built-in formats with a config file or `-X, --format`.
+
+#### Config file
+
+```toml
+[builtin_formats]
+short_date = "yyyy/m/d"
+short_date_time = "yyyy/m/d h:mm"
+short_time = "h:mm"
+long_time = "h:mm:ss"
+```
+
+```console
+$ xlsx_extractor -f tests/test.xlsm -s シート4 -d , -c tests/config.toml テスト1 日付
+テスト1,日付
+aaa,2026/5/14
+bbb,2026年5月14日
+ccc,5月14日
+
+```
+
+#### Command-line format override
+
+```console
+$ xlsx_extractor -f tests/test.xlsm -s シート4 -d , -X short_date=yyyy/m/d テスト1 日付
+テスト1,日付
+aaa,2026/5/14
+bbb,2026年5月14日
+ccc,5月14日
+
+```
+
+Command-line overrides take precedence over config file values.
+
+Supported built-in format names:
+
+| Name              | Excel numFmtId | Meaning                     | Example format | Example output  |
+|-------------------|---------------:|-----------------------------|----------------|-----------------|
+| short_date        |             14 | Short date                  | yyyy/m/d       | 2026/6/21       |
+| date_abbr_month   |             15 | Date with abbreviated month | d-mmm-yy       | 21-Jun-26       |
+| day_abbr_month    |             16 | Day and abbreviated month   | d-mmm          | 21-Jun          |
+| abbr_month_year   |             17 | Abbreviated month and year  | mmm-yy         | Jun-26          |
+| time_ampm         |             18 | Time with AM/PM             | h:mm AM/PM     | 12:34 PM        |
+| time_seconds_ampm |             19 | Time with seconds and AM/PM | h:mm:ss AM/PM  | 12:34:56 PM     |
+| short_time        |             20 | Short time                  | h:mm           | 12:34           |
+| long_time         |             21 | Long time                   | h:mm:ss        | 12:34:56        |
+| short_date_time   |             22 | Short date and time         | yyyy/m/d h:mm  | 2026/6/21 12:34 |

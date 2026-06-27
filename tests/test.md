@@ -215,9 +215,9 @@ Options:
           Config file
 
   -X, --format <NAME=FORMAT>
-          Set the date and time formats
-          Key words:
-          short_date, short_date_time, short_time, long_time
+          Override Excel built-in date/time formats
+          
+          Use NAME=FORMAT. See README for supported format names.
           
           Example:
           -X 'short_date_time=yyyy/m/d h:mm'
