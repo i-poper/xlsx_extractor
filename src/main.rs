@@ -6,6 +6,61 @@ use umya_spreadsheet::helper::coordinate::CellCoordinates;
 use umya_spreadsheet::*;
 use unescape::unescape;
 
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Config {
+    #[serde(default)]
+    builtin_formats: FormatConfig,
+}
+
+#[derive(Debug, Default, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FormatConfig {
+    short_date: Option<String>,
+    date_abbr_month: Option<String>,
+    day_abbr_month: Option<String>,
+    abbr_month_year: Option<String>,
+    time_ampm: Option<String>,
+    time_seconds_ampm: Option<String>,
+    short_time: Option<String>,
+    long_time: Option<String>,
+    short_date_time: Option<String>,
+}
+
+impl FormatConfig {
+    fn get(&self, num_fmt_id: u32) -> Option<&str> {
+        match num_fmt_id {
+            14 => self.short_date.as_deref(),
+            15 => self.date_abbr_month.as_deref(),
+            16 => self.day_abbr_month.as_deref(),
+            17 => self.abbr_month_year.as_deref(),
+            18 => self.time_ampm.as_deref(),
+            19 => self.time_seconds_ampm.as_deref(),
+            20 => self.short_time.as_deref(),
+            21 => self.long_time.as_deref(),
+            22 => self.short_date_time.as_deref(),
+            _ => None,
+        }
+    }
+
+    fn set(&mut self, name: &str, format: String) -> Result<(), String> {
+        match name {
+            "short_date" => self.short_date = Some(format),
+            "date_abbr_month" => self.date_abbr_month = Some(format),
+            "day_abbr_month" => self.day_abbr_month = Some(format),
+            "abbr_month_year" => self.abbr_month_year = Some(format),
+            "time_ampm" => self.time_ampm = Some(format),
+            "time_seconds_ampm" => self.time_seconds_ampm = Some(format),
+            "short_time" => self.short_time = Some(format),
+            "long_time" => self.long_time = Some(format),
+            "short_date_time" => self.short_date_time = Some(format),
+            _ => return Err(format!("unknown built-in format name `{name}`")),
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about="Tool to extract data from xlsx(xlsm) by specifying headers.", long_about = None)]
 struct Args {
@@ -33,6 +88,37 @@ struct Args {
     /// Header names
     #[arg(value_parser = escaped_string)]
     headers: Vec<String>,
+    /// Config file
+    #[arg(short = 'c', long = "config")]
+    config_file: Option<String>,
+    /// Set the date and time formats
+    /// Key words:
+    /// short_date, short_date_time, short_time, long_time
+    ///
+    /// Example:
+    /// -X 'short_date_time=yyyy/m/d h:mm'
+    #[arg(
+        short = 'X', long = "format", value_name = "NAME=FORMAT",
+        value_parser = parse_format_override, verbatim_doc_comment
+    )]
+    format_overrides: Vec<(String, String)>,
+}
+
+///
+fn parse_format_override(s: &str) -> Result<(String, String), String> {
+    let (name, format) = s
+        .split_once('=')
+        .ok_or_else(|| "format override must be NAME=FORMAT".to_string())?;
+
+    if name.is_empty() {
+        return Err("format override name must not be empty".to_string());
+    }
+
+    if format.is_empty() {
+        return Err("format override value must not be empty".to_string());
+    }
+
+    Ok((name.to_string(), format.to_string()))
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
@@ -62,20 +148,27 @@ struct HeaderInfo {
     header_column: Vec<u32>,
 }
 
-struct ExtractOptions {
-    short_date_format: Option<String>,
-}
-
+//================================================================================
+/// Extraction context for a single worksheet.
+///
+/// It finds rows by header names and converts cell values to output text using
+/// the configured formatting options.
 struct WorksheetExtractor<'a> {
     sheet: &'a Worksheet,
-    options: ExtractOptions,
+    options: FormatConfig,
 }
 
+//================================================================================
 impl<'a> WorksheetExtractor<'a> {
-    fn new(sheet: &'a Worksheet, options: ExtractOptions) -> Self {
+    fn new(sheet: &'a Worksheet, options: FormatConfig) -> Self {
         WorksheetExtractor { sheet, options }
     }
 
+    //--------------------------------------------------------------------------------
+    /// Iterates over non-empty data rows matched by the specified headers.
+    ///
+    /// The header row is detected from `headers`. Each yielded row contains cell
+    /// text values in the same order as `headers`.
     fn get_iterator<'b>(&'b self, headers: &[String]) -> impl Iterator<Item = Vec<String>> + 'b {
         // Find a Header
         let header = self.find_header(headers).unwrap_or_else(|| {
@@ -139,7 +232,12 @@ impl<'a> WorksheetExtractor<'a> {
         match self.sheet.cell_value(coordinate.clone()).raw_value() {
             CellRawValue::Numeric(value) => {
                 if let Some(format) = self.sheet.style(coordinate.clone()).number_format() {
-                    let format_code = format.format_code();
+                    let format_id = format.number_format_id();
+                    let format_code = if let Some(format) = self.options.get(format_id) {
+                        format
+                    } else {
+                        format.format_code()
+                    };
                     if format_code != NumberingFormat::FORMAT_GENERAL {
                         if let Ok(text) = ssfmt::format_default(*value, format_code) {
                             return text.trim_end().to_string();
@@ -179,6 +277,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut book = reader::xlsx::lazy_read(path)
         .unwrap_or_else(|e| invalid_value(&format!("Can't read `{}`: {e}", path.display())));
 
+    let mut config: Config = if let Some(file) = args.config_file {
+        toml::from_str::<Config>(
+            &std::fs::read_to_string(&file)
+                .unwrap_or_else(|e| invalid_value(&format!("Can't read file `{file}`: {e}"))),
+        )
+        .unwrap_or_else(|e| invalid_value(&format!("Invalid config: {e}")))
+    } else {
+        Config::default()
+    };
+    for (k, v) in &args.format_overrides {
+        config
+            .builtin_formats
+            .set(k, v.clone())
+            .unwrap_or_else(|e| invalid_value(&e))
+    }
+
     // Check sheet name
     let sheet = if let Some(ref sheet_name) = args.sheet {
         let index = book
@@ -199,10 +313,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .quote(args.quote)
         .quote_style(args.style.into());
 
-    let options = ExtractOptions {
-        short_date_format: Some("yyyy/m/d".to_string()),
-    };
-    let extractor = WorksheetExtractor::new(&sheet, options);
+    let extractor = WorksheetExtractor::new(&sheet, config.builtin_formats);
     let mut data_iter = extractor.get_iterator(&args.headers);
     let show_headers = args.header.then_some(args.headers);
     // Output data based on headers

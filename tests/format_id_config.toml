@@ -1,0 +1,12 @@
+# Use intentionally distinct formats to verify that each built-in numFmtId
+# is mapped to the expected format name.
+[builtin_formats]
+short_date = "yyyy/m/d"
+date_abbr_month = "yy-mmm-d"
+day_abbr_month = "mmm-d"
+abbr_month_year = "yy-mmm"
+time_ampm = "AM/PM h:mm"
+time_seconds_ampm = "AM/PM h:mm:ss"
+short_time = "d-h:mm"
+long_time = "d-h:mm:ss"
+short_date_time = "yyyy/m/d h:mm"
