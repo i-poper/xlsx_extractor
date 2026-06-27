@@ -322,3 +322,48 @@ Usage: xlsx_extractor [OPTIONS] --file <XLSX> [HEADERS]...
 For more information, try '--help'.
 
 ```
+# Config file not found
+```console
+$ xlsx_extractor -f tests/test.xlsx -c tests/not-found.toml test1
+? failed
+error: Can't read file `tests/not-found.toml`: [..]
+
+Usage: xlsx_extractor [OPTIONS] --file <XLSX> [HEADERS]...
+
+For more information, try '--help'.
+
+```
+
+# Unknown format name in config file
+```console
+$ xlsx_extractor -f tests/test.xlsx -c tests/unknown_format_config.toml test1
+? failed
+error: Invalid config: unknown built-in format name `unknown`
+
+Usage: xlsx_extractor [OPTIONS] --file <XLSX> [HEADERS]...
+
+For more information, try '--help'.
+
+```
+
+# Unknown format name in command-line override
+```console
+$ xlsx_extractor -f tests/test.xlsx -X unknown=yyyy/m/d test1
+? failed
+error: unknown built-in format name `unknown`
+
+Usage: xlsx_extractor [OPTIONS] --file <XLSX> [HEADERS]...
+
+For more information, try '--help'.
+
+```
+
+# Invalid command-line format override
+```console
+$ xlsx_extractor -f tests/test.xlsx -X short_date test1
+? failed
+error: invalid value 'short_date' for '--format <NAME=FORMAT>': format override must be NAME=FORMAT
+
+For more information, try '--help'.
+
+```

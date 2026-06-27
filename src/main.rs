@@ -1,6 +1,7 @@
 use clap::{error::ErrorKind, ArgAction, CommandFactory, Parser};
 use clap_derive::{Parser, ValueEnum};
 use csv::{QuoteStyle, Writer, WriterBuilder};
+use std::collections::HashMap;
 use std::{error::Error, io};
 use umya_spreadsheet::helper::coordinate::CellCoordinates;
 use umya_spreadsheet::*;
@@ -14,51 +15,53 @@ struct Config {
 }
 
 #[derive(Debug, Default, Clone, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(transparent)]
 struct FormatConfig {
-    short_date: Option<String>,
-    date_abbr_month: Option<String>,
-    day_abbr_month: Option<String>,
-    abbr_month_year: Option<String>,
-    time_ampm: Option<String>,
-    time_seconds_ampm: Option<String>,
-    short_time: Option<String>,
-    long_time: Option<String>,
-    short_date_time: Option<String>,
+    formats: HashMap<String, String>,
 }
+
+const BUILTIN_FORMATS: &[(u32, &str)] = &[
+    (14, "short_date"),
+    (15, "date_abbr_month"),
+    (16, "day_abbr_month"),
+    (17, "abbr_month_year"),
+    (18, "time_ampm"),
+    (19, "time_seconds_ampm"),
+    (20, "short_time"),
+    (21, "long_time"),
+    (22, "short_date_time"),
+];
 
 impl FormatConfig {
     fn get(&self, num_fmt_id: u32) -> Option<&str> {
-        match num_fmt_id {
-            14 => self.short_date.as_deref(),
-            15 => self.date_abbr_month.as_deref(),
-            16 => self.day_abbr_month.as_deref(),
-            17 => self.abbr_month_year.as_deref(),
-            18 => self.time_ampm.as_deref(),
-            19 => self.time_seconds_ampm.as_deref(),
-            20 => self.short_time.as_deref(),
-            21 => self.long_time.as_deref(),
-            22 => self.short_date_time.as_deref(),
-            _ => None,
-        }
+        let name = BUILTIN_FORMATS
+            .iter()
+            .find_map(|(id, name)| (*id == num_fmt_id).then_some(*name))?;
+        self.formats.get(name).map(String::as_str)
     }
 
     fn set(&mut self, name: &str, format: String) -> Result<(), String> {
-        match name {
-            "short_date" => self.short_date = Some(format),
-            "date_abbr_month" => self.date_abbr_month = Some(format),
-            "day_abbr_month" => self.day_abbr_month = Some(format),
-            "abbr_month_year" => self.abbr_month_year = Some(format),
-            "time_ampm" => self.time_ampm = Some(format),
-            "time_seconds_ampm" => self.time_seconds_ampm = Some(format),
-            "short_time" => self.short_time = Some(format),
-            "long_time" => self.long_time = Some(format),
-            "short_date_time" => self.short_date_time = Some(format),
-            _ => return Err(format!("unknown built-in format name `{name}`")),
+        if !is_builtin_format_name(name) {
+            return Err(format!("unknown built-in format name `{name}`"));
         }
-
+        self.formats.insert(name.to_string(), format);
         Ok(())
     }
+
+    fn validate(&self) -> Result<(), String> {
+        for name in self.formats.keys() {
+            if !is_builtin_format_name(name) {
+                return Err(format!("unknown built-in format name `{name}`"));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn is_builtin_format_name(name: &str) -> bool {
+    BUILTIN_FORMATS
+        .iter()
+        .any(|(_id, format_name)| *format_name == name)
 }
 
 #[derive(Parser, Debug)]
@@ -268,6 +271,39 @@ fn escaped_string(s: &str) -> Result<String, String> {
     unescape(s).ok_or(format!("`{s}` is not a valid escape string."))
 }
 
+//--------------------------------------------------------------------------------
+/// Loads configuration from a TOML file.
+///
+/// Returns the default configuration when `path` is `None`.
+fn load_config_file(path: Option<&str>) -> Config {
+    let config = if let Some(file) = path {
+        toml::from_str::<Config>(
+            &std::fs::read_to_string(&file)
+                .unwrap_or_else(|e| invalid_value(&format!("Can't read file `{file}`: {e}"))),
+        )
+        .unwrap_or_else(|e| invalid_value(&format!("Invalid config: {e}")))
+    } else {
+        Config::default()
+    };
+    if let Err(e) = config.builtin_formats.validate() {
+        invalid_value(&format!("Invalid config: {e}"));
+    }
+    config
+}
+
+//--------------------------------------------------------------------------------
+/// Applies command-line format overrides to the configuration.
+///
+/// Overrides take precedence over values loaded from the config file.
+fn apply_format_overrides(config: &mut Config, overrides: &[(String, String)]) {
+    for (k, v) in overrides {
+        config
+            .builtin_formats
+            .set(k, v.clone())
+            .unwrap_or_else(|e| invalid_value(&e))
+    }
+}
+
 //================================================================================
 /// main
 fn main() -> Result<(), Box<dyn Error>> {
@@ -277,21 +313,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut book = reader::xlsx::lazy_read(path)
         .unwrap_or_else(|e| invalid_value(&format!("Can't read `{}`: {e}", path.display())));
 
-    let mut config: Config = if let Some(file) = args.config_file {
-        toml::from_str::<Config>(
-            &std::fs::read_to_string(&file)
-                .unwrap_or_else(|e| invalid_value(&format!("Can't read file `{file}`: {e}"))),
-        )
-        .unwrap_or_else(|e| invalid_value(&format!("Invalid config: {e}")))
-    } else {
-        Config::default()
-    };
-    for (k, v) in &args.format_overrides {
-        config
-            .builtin_formats
-            .set(k, v.clone())
-            .unwrap_or_else(|e| invalid_value(&e))
-    }
+    let mut config = load_config_file(args.config_file.as_deref());
+    apply_format_overrides(&mut config, &args.format_overrides);
 
     // Check sheet name
     let sheet = if let Some(ref sheet_name) = args.sheet {
